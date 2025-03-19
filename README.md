@@ -41,7 +41,7 @@ This project is an engaging augmented reality (AR) game where players catch fall
 ## Technologies Used
 
 - **AR-JS Library**: Powers the augmented reality functionality
-- **Claude 3.7**: Used for development (assumed tool/model reference)
+- **Claude 3.7**: Used for development
 
 ## 3D Objects
 
@@ -85,4 +85,3 @@ The nescafe_mug.glb model and any associated Nescafé branding used in this game
 ## Developer
 
 - **Name**: Eduardo Arana
-- **Email**: [info@arananet.net](mailto:info@arananet.net)
