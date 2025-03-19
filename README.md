@@ -74,6 +74,10 @@ This project is an engaging augmented reality (AR) game where players catch fall
 
 To run the game, host the code on a local web server to avoid CORS (Cross-Origin Resource Sharing) issues.
 
+## Working demo
+
+Demo is available at this URL: https://arananet.net/ar
+
 ## Disclaimer
 
 The nescafe_mug.glb model and any associated Nescafé branding used in this game are for demonstration purposes only. This project is not affiliated with, endorsed by, or sponsored by Nescafé or its parent company, Nestlé. The use of the Nescafé mug model does not imply any official partnership or commercial usage rights. Users are responsible for ensuring compliance with copyright and trademark laws if distributing or modifying this game for non-personal use.
