@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>NessCoffee Wake Up Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- Use specific versions known to work well together -->
+  <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+  <!-- Add the mindar library for markerless tracking -->
+  <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.1.5/dist/mindar-image.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.1.5/dist/mindar-image-aframe.prod.js"></script>
+  
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    .ui-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 999;
+    }
+    .timer-display {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(80,80,80,0.7);
+      color: white;
+      padding: 10px 15px;
+      border-radius: 10px;
+      font-size: 18px;
+    }
+    .score-display {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(80,80,80,0.7);
+      color: white;
+      padding: 10px 15px;
+      border-radius: 10px;
+      font-size: 18px;
+    }
+    .game-panel {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(80,80,80,0.8);
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+      pointer-events: auto;
+      max-width: 80%;
+    }
+    .game-panel h2 {
+      color: #ff6600;
+      margin-top: 0;
+    }
+    .game-panel button {
+      background: #ff6600;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 15px;
+    }
+    #start-panel { display: block; }
+    #placement-panel { display: none; }
+    #game-over-panel { display: none; }
+    #countdown { 
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 100px;
+      color: #ff6600;
+      text-shadow: 0 0 10px black;
+      font-weight: bold;
+      display: none;
+    }
+    #ar-mode-toggle {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(80,80,80,0.8);
+      color: white;
+      padding: 10px 15px;
+      border-radius: 10px;
+      font-size: 16px;
+      pointer-events: auto;
+      z-index: 1000;
+      display: none;
+    }
+    .debug-panel {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 5px;
+      font-size: 12px;
+      z-index: 1000;
+      display: none;
+    }
+  </style>
+</head>
+<body style="margin: 0; overflow: hidden;">
+  <!-- A-Frame Scene -->
+  <a-scene embedded arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false">
+    <!-- Assets -->
+    <a-assets timeout="10000">
+      <a-asset-item id="mug-model" src="nescafe_mug.glb"></a-asset-item>
+      <a-asset-item id="bean-model" src="Coffee_bean.glb"></a-asset-item>
+      <a-asset-item id="star-model" src="Star.glb"></a-asset-item>
+      <a-asset-item id="clock-model" src="Alarm_Clock.glb"></a-asset-item>
+      <audio id="collect-sound" src="collect_bean.mp3" preload="auto"></audio>
+      <audio id="powerup-sound" src="powerup.mp3" preload="auto"></audio>
+    </a-assets>
+
+    <!-- Marker-based AR -->
+    <a-marker preset="hiro" id="hiro-marker">
+      <!-- Player's mug will be placed relative to marker -->
+      <a-entity id="mug-marker" gltf-model="#mug-model" scale="0.5 0.5 0.5" position="0 0 0" rotation="36 -180 0" visible="false"></a-entity>
+    </a-marker>
+
+    <!-- Surface detection anchors (will be used for markerless AR) -->
+    <a-entity id="surface-container" visible="false">
+      <a-entity id="mug-surface" gltf-model="#mug-model" scale="0.2 0.2 0.2" position="0 0 -2" rotation="6 -180 0"  visible="false"></a-entity>
+    </a-entity>
+
+    <!-- Game elements containers - positioned relative to camera -->
+    <a-entity id="beans-container" position="0 0 0"></a-entity>
+    <a-entity id="powerups-container" position="0 0 0"></a-entity>
+
+    <!-- Fallback mug for regular mode -->
+    <a-entity id="mug-fallback" gltf-model="#mug-model" scale="0.5 0.5 0.5" position="0 -0.5 -3" rotation="26 -180 0" visible="false"></a-entity>
+
+    <!-- Camera -->
+    <a-entity camera position="0 0 0" look-controls="enabled: false"></a-entity>
+  </a-scene>
+
+  <!-- UI Overlay -->
+  <div class="ui-overlay">
+    <div class="timer-display">Time: 60s</div>
+    <div class="score-display">Score: 0</div>
+    <div id="countdown">3</div>
+    <div id="ar-mode-toggle">
+      <button id="marker-mode-btn">Marker Mode</button>
+      <button id="surface-mode-btn">Surface Mode</button>
+      <button id="normal-mode-btn">Normal Mode</button>
+    </div>
+    <div class="debug-panel" id="debug-panel">Debug info</div>
+    
+    <!-- Game UI Panels -->
+    <div id="start-panel" class="game-panel">
+      <h2>NessCoffee Wake Up!</h2>
+      <p>Catch falling coffee beans in your mug to brew the perfect cup!</p>
+      <p>POC created by Eduardo Arana <info@arananet.net> using AR.js and Claude 3.7 Sonnet!</p>
+      <p>Choose how to play:</p>
+      <button id="marker-btn">Use HIRO Marker</button>
+      <button id="surface-btn">Use Surface Detection</button>
+      <button id="normal-btn">Normal Mode (No AR)</button>
+    </div>
+    
+    <div id="placement-panel" class="game-panel">
+      <h3>Place Your Mug</h3>
+      <p id="placement-instructions">Hold the Hiro marker steady in view of the camera</p>
+    </div>
+    
+    <div id="game-over-panel" class="game-panel">
+      <h2>Game Over!</h2>
+      <p>Your Score: <span id="final-score">0</span></p>
+      <button id="replay-button">Play Again</button>
+    </div>
+  </div>
+
+  <script>
+    // Wait for document to load
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('Document loaded');
+      
+      // Debug mode
+      const DEBUG = true;
+      const debugPanel = document.getElementById('debug-panel');
+      if (DEBUG) {
+        debugPanel.style.display = 'block';
+      }
+      
+      function debugLog(msg) {
+        if (DEBUG) {
+          console.log(msg);
+          debugPanel.textContent = msg;
+        }
+      }
+      
+      // Game variables
+      let score = 0;
+      let timer = 60;
+      let gameActive = false;
+      let gameState = 'start'; // 'start', 'placement', 'countdown', 'play', 'over'
+      let gameMode = 'marker'; // 'marker', 'surface', 'normal'
+      let beans = [];
+      let powerups = [];
+      let spawnTimer;
+      let gameTimer;
+      let markerVisible = false;
+      let surfaceDetected = false;
+      
+      // Game elements
+      const hiroMarker = document.getElementById('hiro-marker');
+      const surfaceContainer = document.getElementById('surface-container');
+      const mugMarker = document.getElementById('mug-marker');
+      const mugSurface = document.getElementById('mug-surface');
+      const mugFallback = document.getElementById('mug-fallback');
+      const beansContainer = document.getElementById('beans-container');
+      const powerupsContainer = document.getElementById('powerups-container');
+      
+      // UI elements
+      const scoreDisplay = document.querySelector('.score-display');
+      const timerDisplay = document.querySelector('.timer-display');
+      const startPanel = document.getElementById('start-panel');
+      const placementPanel = document.getElementById('placement-panel');
+      const placementInstructions = document.getElementById('placement-instructions');
+      const gameOverPanel = document.getElementById('game-over-panel');
+      const finalScoreSpan = document.getElementById('final-score');
+      const countdown = document.getElementById('countdown');
+      const arModeToggle = document.getElementById('ar-mode-toggle');
+      
+      // Buttons
+      const markerBtn = document.getElementById('marker-btn');
+      const surfaceBtn = document.getElementById('surface-btn');
+      const normalBtn = document.getElementById('normal-btn');
+      const markerModeBtn = document.getElementById('marker-mode-btn');
+      const surfaceModeBtn = document.getElementById('surface-mode-btn');
+      const normalModeBtn = document.getElementById('normal-mode-btn');
+      const replayButton = document.getElementById('replay-button');
+      
+      // Audio elements
+      const collectSound = document.getElementById('collect-sound');
+      const powerupSound = document.getElementById('powerup-sound');
+      
+      // Initialize buttons
+      markerBtn.addEventListener('click', () => {
+        setGameMode('marker');
+        initGame();
+      });
+      
+      surfaceBtn.addEventListener('click', () => {
+        setGameMode('surface');
+        initGame();
+      });
+      
+      normalBtn.addEventListener('click', () => {
+        setGameMode('normal');
+        initGame();
+      });
+      
+      markerModeBtn.addEventListener('click', () => {
+        if (gameState !== 'play') {
+          setGameMode('marker');
+          restartGame();
+        }
+      });
+      
+      surfaceModeBtn.addEventListener('click', () => {
+        if (gameState !== 'play') {
+          setGameMode('surface');
+          restartGame();
+        }
+      });
+      
+      normalModeBtn.addEventListener('click', () => {
+        if (gameState !== 'play') {
+          setGameMode('normal');
+          restartGame();
+        }
+      });
+      
+      replayButton.addEventListener('click', restartGame);
+
+      // Add this function after the collectBean function
+
+function createSplashEffect(position) {
+  // Create splash container
+  const splash = document.createElement('a-entity');
+  
+  // Position it just above the top of the mug
+  splash.setAttribute('position', {
+    x: position.x,
+    y: position.y + 0.15, // Position slightly above the mug's top
+    z: position.z
+  });
+  
+  // Create particles for the splash effect
+  for (let i = 0; i < 8; i++) {
+    const particle = document.createElement('a-entity');
+    
+    // Create a small sphere for each particle
+    particle.setAttribute('geometry', {
+      primitive: 'sphere',
+      radius: 0.03
+    });
+    
+    // Brown coffee color with some transparency
+    particle.setAttribute('material', {
+      color: '#000000',
+      opacity: 0.8,
+      transparent: true
+    });
+    
+    // Random initial position at the center
+    particle.setAttribute('position', {x: 0, y: 0, z: 0});
+    
+    // Random direction animation
+    const angle = (i / 8) * Math.PI * 2;
+    const distance = 0.1 + (Math.random() * 0.1);
+    
+    // Animate the particle in a splash pattern
+    particle.setAttribute('animation__position', {
+      property: 'position',
+      to: `${Math.cos(angle) * distance} ${0.1 + (Math.random() * 0.1)} ${Math.sin(angle) * distance}`,
+      dur: 500,
+      easing: 'easeOutQuad'
+    });
+    
+    // Fade out animation
+    particle.setAttribute('animation__opacity', {
+      property: 'material.opacity',
+      from: 0.8,
+      to: 0,
+      dur: 500,
+      easing: 'easeOutQuad'
+    });
+    
+    // Add particle to splash container
+    splash.appendChild(particle);
+  }
+  
+  // Add splash to the appropriate parent based on game mode
+  if (gameMode === 'marker' && markerVisible) {
+    hiroMarker.appendChild(splash);
+  } else {
+    beansContainer.appendChild(splash);
+  }
+  
+  // Remove the splash effect after animation completes
+  setTimeout(() => {
+    try {
+      if (gameMode === 'marker' && markerVisible) {
+        if (hiroMarker.contains(splash)) {
+          hiroMarker.removeChild(splash);
+        }
+      } else {
+        if (beansContainer.contains(splash)) {
+          beansContainer.removeChild(splash);
+        }
+      }
+    } catch (e) {
+      debugLog('Error removing splash effect: ' + e.message);
+    }
+  }, 600);
+}
+      
+      // Set game mode
+      function setGameMode(mode) {
+        gameMode = mode;
+        
+        // Update instructions
+        if (mode === 'marker') {
+          placementInstructions.textContent = 'Hold the Hiro marker steady in view of the camera';
+        } else if (mode === 'surface') {
+          placementInstructions.textContent = 'Tap on a surface to place your mug';
+        } else {
+          placementInstructions.textContent = 'Position your mug and get ready';
+        }
+        
+        // Show mode toggle
+        arModeToggle.style.display = 'block';
+      }
+      
+      // Listen for marker found/lost events
+      hiroMarker.addEventListener('markerFound', function() {
+        debugLog('Marker found');
+        markerVisible = true;
+        
+        if (gameMode === 'marker' && gameState === 'placement') {
+          mugMarker.setAttribute('visible', true);
+          setTimeout(startCountdown, 2000); // Give time to stabilize marker
+        }
+      });
+      
+      hiroMarker.addEventListener('markerLost', function() {
+        debugLog('Marker lost');
+        markerVisible = false;
+        
+        // If in placement state, don't proceed with game
+        if (gameMode === 'marker' && gameState === 'placement') {
+          mugMarker.setAttribute('visible', false);
+        }
+      });
+      
+      // Setup tap event for surface mode
+      document.addEventListener('click', function(event) {
+        if (gameMode === 'surface' && gameState === 'placement') {
+          // In a real app, we'd use hit testing to place on surfaces
+          // Here we'll just place it in front of the camera
+          debugLog('Surface clicked, placing mug');
+          mugSurface.setAttribute('visible', true);
+          surfaceContainer.setAttribute('visible', true);
+          surfaceDetected = true;
+          setTimeout(startCountdown, 1000);
+        }
+      });
+      
+      // Initialize game
+      function initGame() {
+        debugLog('Game initializing in ' + gameMode + ' mode');
+        // Hide start panel, show placement panel
+        startPanel.style.display = 'none';
+        placementPanel.style.display = 'block';
+        gameState = 'placement';
+        
+        // Setup based on mode
+        if (gameMode === 'marker') {
+          // If marker is already visible, show mug
+          if (markerVisible) {
+            mugMarker.setAttribute('visible', true);
+            setTimeout(startCountdown, 2000);
+          }
+        } else if (gameMode === 'surface') {
+          // Wait for tap to place
+        } else if (gameMode === 'normal') {
+          // Show fallback mug immediately
+          mugFallback.setAttribute('visible', true);
+          setTimeout(startCountdown, 1000);
+        }
+      }
+      
+      function startCountdown() {
+        if (gameState !== 'placement') return;
+        
+        placementPanel.style.display = 'none';
+        gameState = 'countdown';
+        countdown.style.display = 'block';
+        let count = 3;
+        countdown.textContent = count;
+        
+        const countInterval = setInterval(() => {
+          count--;
+          if (count > 0) {
+            countdown.textContent = count;
+          } else {
+            clearInterval(countInterval);
+            countdown.style.display = 'none';
+            startGame();
+          }
+        }, 1000);
+      }
+      
+      function startGame() {
+        debugLog('Game active');
+        gameState = 'play';
+        gameActive = true;
+        
+        // Reset game variables
+        score = 0;
+        timer = 60;
+        
+        // Update UI
+        updateScore(0);
+        updateTimer();
+        
+        // Start bean spawning
+        spawnTimer = setInterval(spawnBean, 600);
+        
+        // Start game timer
+        gameTimer = setInterval(() => {
+          timer--;
+          updateTimer();
+          
+          if (timer <= 0) {
+            endGame();
+          }
+        }, 1000);
+        
+        // Start game loop
+        requestAnimationFrame(updateGame);
+        
+        // Spawn first powerup after 10 seconds
+        setTimeout(spawnPowerup, 10000);
+      }
+      
+      function spawnBean() {
+        if (!gameActive) return;
+        
+        // Get appropriate mug based on mode
+        const mug = getMugElement();
+        if (!mug) return;
+        
+        // Create bean entity
+        const bean = document.createElement('a-entity');
+        const isSpecial = Math.random() < 0.2; // 20% chance for special bean
+        
+        // Use the bean model
+        bean.setAttribute('gltf-model', '#bean-model');
+        
+        // Adjust scale based on mode
+        if (gameMode === 'marker') {
+          bean.setAttribute('scale', isSpecial ? '0.03 0.03 0.03' : '0.03 0.03 0.03');
+        } else {
+          bean.setAttribute('scale', isSpecial ? '0.03 0.03 0.03' : '0.03 0.03 0.03');
+        }
+        
+        // Get mug position
+        const mugPosition = mug.getAttribute('position');
+        
+        // Position based on game mode
+        let x, y, z;
+        if (gameMode === 'marker') {
+          x = (Math.random() * 2 - 1) * 0.3; // -0.3 to 0.3
+          z = (Math.random() * 2 - 1) * 0.3; // -0.3 to 0.3
+          y = 1; // Height above marker
+          
+          // Set parent to marker
+          hiroMarker.appendChild(bean);
+        } else if (gameMode === 'surface' || gameMode === 'normal') {
+          x = mugPosition.x + (Math.random() * 2 - 1); // mug.x +/- 1
+          z = mugPosition.z + (Math.random() * 0.5); // mug.z +/- 0.5
+          y = mugPosition.y + 2; // 2 units above mug
+          
+          // Add to scene
+          beansContainer.appendChild(bean);
+        }
+        
+        bean.setAttribute('position', {x, y, z});
+        bean.setAttribute('rotation', {
+          x: Math.random() * 360,
+          y: Math.random() * 360,
+          z: Math.random() * 360
+        });
+        
+        // Animation for spinning
+        bean.setAttribute('animation', {
+          property: 'rotation',
+          to: `${Math.random() * 360} ${Math.random() * 360} ${Math.random() * 360}`,
+          dur: 2000,
+          loop: true
+        });
+        
+        // Add color to special beans
+        if (isSpecial) {
+          bean.setAttribute('material', 'color: #FFD700');
+        }
+        
+        // Add to beans array
+        beans.push({
+          element: bean,
+          special: isSpecial,
+          position: {x, y, z},
+          velocity: 0.01,
+          parentIsMarker: gameMode === 'marker'
+        });
+      }
+      
+      function spawnPowerup() {
+        if (!gameActive) {
+          setTimeout(spawnPowerup, 5000);
+          return;
+        }
+        
+        // Get appropriate mug based on mode
+        const mug = getMugElement();
+        if (!mug) {
+          setTimeout(spawnPowerup, 5000);
+          return;
+        }
+        
+        // Determine powerup type
+        const powerupTypes = ['star', 'clock'];
+        const type = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
+        
+        // Create powerup entity
+        const powerup = document.createElement('a-entity');
+        
+        // Set model based on type
+        if (type === 'star') {
+          powerup.setAttribute('gltf-model', '#star-model');
+          powerup.setAttribute('scale', '0.5 0.5 0.5');
+          
+          // Adjust scale based on mode
+          if (gameMode === 'marker') {
+            powerup.setAttribute('scale', '0.3 0.3 0.3');
+          } else {
+            powerup.setAttribute('scale', '0.1 0.1 0.1');
+          }
+        } else {
+          powerup.setAttribute('gltf-model', '#clock-model');
+          
+          // Adjust scale based on mode
+          if (gameMode === 'marker') {
+            powerup.setAttribute('scale', '0.05 0.05 0.05');
+          } else {
+            powerup.setAttribute('scale', '0.1 0.1 0.1');
+          }
+        }
+        
+        // Get mug position
+        const mugPosition = mug.getAttribute('position');
+        
+        // Position based on game mode
+        let x, y, z;
+        
+        if (gameMode === 'marker') {
+          x = (Math.random() * 2 - 1) * 0.3; // -0.3 to 0.3
+          z = (Math.random() * 2 - 1) * 0.3; // -0.3 to 0.3
+          y = 1; // Height above marker
+          
+          // Set parent to marker
+          hiroMarker.appendChild(powerup);
+        } else if (gameMode === 'surface' || gameMode === 'normal') {
+          x = mugPosition.x + (Math.random() * 2 - 1); // mug.x +/- 1
+          z = mugPosition.z + (Math.random() * 0.5); // mug.z +/- 0.5
+          y = mugPosition.y + 2; // 2 units above mug
+          
+          // Add to scene
+          powerupsContainer.appendChild(powerup);
+        }
+        
+        powerup.setAttribute('position', {x, y, z});
+        powerup.setAttribute('rotation', {
+          x: Math.random() * 360,
+          y: Math.random() * 360,
+          z: Math.random() * 360
+        });
+        
+        // Animation for spinning
+        powerup.setAttribute('animation', {
+          property: 'rotation',
+          to: `${Math.random() * 360} ${Math.random() * 360} ${Math.random() * 360}`,
+          dur: 3000,
+          loop: true
+        });
+        
+        // Add to powerups array
+        powerups.push({
+          element: powerup,
+          type: type,
+          position: {x, y, z},
+          velocity: 0.02,
+          parentIsMarker: gameMode === 'marker'
+        });
+        
+        // Schedule next powerup
+        setTimeout(spawnPowerup, 15000 + Math.random() * 10000);
+      }
+      
+      function updateGame() {
+        if (!gameActive) {
+          requestAnimationFrame(updateGame);
+          return;
+        }
+        
+        // Get mug based on mode
+        const mug = getMugElement();
+        if (!mug) {
+          requestAnimationFrame(updateGame);
+          return;
+        }
+        
+        // Get mug position
+        const mugPosition = mug.getAttribute('position');
+        
+        // Determine if we should update (marker visible or other modes)
+        const shouldUpdate = (gameMode === 'marker' && markerVisible) || 
+                             gameMode === 'surface' || 
+                             gameMode === 'normal';
+        
+        if (shouldUpdate) {
+          // Update beans
+          for (let i = beans.length - 1; i >= 0; i--) {
+            const bean = beans[i];
+            
+            // Apply gravity
+            bean.position.y -= bean.velocity;
+            
+            // Update position
+            bean.element.setAttribute('position', bean.position);
+            
+            // Check if bean hit the ground
+            let groundLevel = 0.05;
+            if (gameMode === 'normal' || gameMode === 'surface') {
+              groundLevel = mugPosition.y - 0.2;
+            }
+            
+            if (bean.position.y <= groundLevel) {
+              // Remove bean
+              try {
+                if (bean.parentIsMarker) {
+                  hiroMarker.removeChild(bean.element);
+                } else {
+                  beansContainer.removeChild(bean.element);
+                }
+              } catch (e) {
+                debugLog('Error removing bean: ' + e.message);
+              }
+              beans.splice(i, 1);
+              continue;
+            }
+            
+            // Check for collision with mug - adjust values for each mode
+            let distanceXZ;
+            let isCollision = false;
+            
+            if (gameMode === 'marker') {
+              // For marker mode, beans are relative to marker, mug is at 0,0
+              distanceXZ = Math.sqrt(bean.position.x * bean.position.x + bean.position.z * bean.position.z);
+              isCollision = distanceXZ < 0.15 && bean.position.y < 0.3 && bean.position.y > 0.05;
+            } else {
+              // For surface/normal modes, calculate distance between bean and mug
+              distanceXZ = Math.sqrt(
+                Math.pow(bean.position.x - mugPosition.x, 2) +
+                Math.pow(bean.position.z - mugPosition.z, 2)
+              );
+              isCollision = distanceXZ < 0.3 && 
+                          bean.position.y < (mugPosition.y + 0.3) && 
+                          bean.position.y > (mugPosition.y - 0.2);
+            }
+            
+            if (isCollision) {
+              // Bean collected!
+              collectBean(bean);
+              
+              // Remove bean
+              try {
+                if (bean.parentIsMarker) {
+                  hiroMarker.removeChild(bean.element);
+                } else {
+                  beansContainer.removeChild(bean.element);
+                }
+              } catch (e) {
+                debugLog('Error removing bean: ' + e.message);
+              }
+              beans.splice(i, 1);
+            }
+          }
+          
+          // Update powerups
+          for (let i = powerups.length - 1; i >= 0; i--) {
+            const powerup = powerups[i];
+            
+            // Apply gravity
+            powerup.position.y -= powerup.velocity;
+            
+            // Update position
+            powerup.element.setAttribute('position', powerup.position);
+            
+            // Check if powerup hit the ground
+            let groundLevel = 0.05;
+            if (gameMode === 'normal' || gameMode === 'surface') {
+              groundLevel = mugPosition.y - 0.2;
+            }
+            
+            if (powerup.position.y <= groundLevel) {
+              // Remove powerup
+              try {
+                if (powerup.parentIsMarker) {
+                  hiroMarker.removeChild(powerup.element);
+                } else {
+                  powerupsContainer.removeChild(powerup.element);
+                }
+              } catch (e) {
+                debugLog('Error removing powerup: ' + e.message);
+              }
+              powerups.splice(i, 1);
+              continue;
+            }
+            
+            // Check for collision with mug - adjust values for each mode
+            let distanceXZ;
+            let isCollision = false;
+            
+            if (gameMode === 'marker') {
+              // For marker mode, powerups are relative to marker, mug is at 0,0
+              distanceXZ = Math.sqrt(powerup.position.x * powerup.position.x + powerup.position.z * powerup.position.z);
+              isCollision = distanceXZ < 0.15 && powerup.position.y < 0.3 && powerup.position.y > 0.05;
+            } else {
+              // For surface/normal modes, calculate distance between powerup and mug
+              distanceXZ = Math.sqrt(
+                Math.pow(powerup.position.x - mugPosition.x, 2) +
+                Math.pow(powerup.position.z - mugPosition.z, 2)
+              );
+              isCollision = distanceXZ < 0.3 && 
+                          powerup.position.y < (mugPosition.y + 0.3) && 
+                          powerup.position.y > (mugPosition.y - 0.2);
+            }
+            
+            if (isCollision) {
+              // Powerup collected!
+              activatePowerup(powerup.type);
+              
+              // Remove powerup
+              try {
+                if (powerup.parentIsMarker) {
+                  hiroMarker.removeChild(powerup.element);
+                } else {
+                  powerupsContainer.removeChild(powerup.element);
+                }
+              } catch (e) {
+                debugLog('Error removing powerup: ' + e.message);
+              }
+              powerups.splice(i, 1);
+            }
+          }
+        }
+        
+        requestAnimationFrame(updateGame);
+      }
+      
+      function collectBean(bean) {
+        // Play sound
+        try {
+          collectSound.currentTime = 0;
+          collectSound.play().catch(e => console.warn('Audio error:', e));
+        } catch (e) {
+          debugLog('Audio error: ' + e.message);
+        }
+        
+        // Add points
+        const points = bean.special ? 10 : 1;
+        updateScore(score + points);
+
+        // Create splash effect - ADD THIS LINE
+        createSplashEffect(bean.position);
+      }
+      
+      function activatePowerup(type) {
+        // Play sound
+        try {
+          powerupSound.currentTime = 0;
+          powerupSound.play().catch(e => console.warn('Audio error:', e));
+        } catch (e) {
+          debugLog('Audio error: ' + e.message);
+        }
+        
+        if (type === 'star') {
+          // Add bonus points
+          updateScore(score + 5);
+        } else if (type === 'clock') {
+          // Add 10 seconds
+          timer += 10;
+          updateTimer();
+        }
+      }
+      
+      function endGame() {
+        debugLog('Game over');
+        gameState = 'over';
+        gameActive = false;
+        
+        // Clear timers
+        clearInterval(spawnTimer);
+        clearInterval(gameTimer);
+        
+        // Show game over panel
+        finalScoreSpan.textContent = score;
+        gameOverPanel.style.display = 'block';
+        
+        // Clean up beans and powerups
+        clearGameElements();
+      }
+      
+      function restartGame() {
+        debugLog('Game restarting');
+        // Reset game state
+        gameState = 'start';
+        
+        // Hide mugs
+        hideAllMugs();
+        
+        // Hide game over panel
+        gameOverPanel.style.display = 'none';
+        
+        // Show start panel
+        startPanel.style.display = 'block';
+        
+        // Clear any remaining beans and powerups
+        clearGameElements();
+      }
+      
+      function updateScore(newScore) {
+        score = newScore;
+        scoreDisplay.textContent = `Score: ${score}`;
+      }
+      
+      function updateTimer() {
+        timerDisplay.textContent = `Time: ${timer}s`;
+      }
+      
+      function clearGameElements() {
+        // Clear beans
+        while (beans.length > 0) {
+          const bean = beans.pop();
+          try {
+            if (bean.parentIsMarker) {
+              if (hiroMarker.contains(bean.element)) {
+                hiroMarker.removeChild(bean.element);
+              }
+            } else {
+              if (beansContainer.contains(bean.element)) {
+                beansContainer.removeChild(bean.element);
+              }
+            }
+          } catch (e) {
+            debugLog('Error removing bean during cleanup: ' + e.message);
+          }
+        }
+        
+        // Clear powerups
+        while (powerups.length > 0) {
+          const powerup = powerups.pop();
+          try {
+            if (powerup.parentIsMarker) {
+              if (hiroMarker.contains(powerup.element)) {
+                hiroMarker.removeChild(powerup.element);
+              }
+            } else {
+              if (powerupsContainer.contains(powerup.element)) {
+                powerupsContainer.removeChild(powerup.element);
+              }
+            }
+          } catch (e) {
+            debugLog('Error removing powerup during cleanup: ' + e.message);
+          }
+        }
+      }
+      
+      // Helper functions
+      
+      // Get the appropriate mug element based on current mode
+      function getMugElement() {
+        if (gameMode === 'marker') {
+          return markerVisible ? mugMarker : null;
+        } else if (gameMode === 'surface') {
+          return surfaceDetected ? mugSurface : null;
+        } else { // normal mode
+          return mugFallback;
+        }
+      }
+      
+      // Hide all mugs
+      function hideAllMugs() {
+        mugMarker.setAttribute('visible', false);
+        mugSurface.setAttribute('visible', false);
+        mugFallback.setAttribute('visible', false);
+        surfaceContainer.setAttribute('visible', false);
+      }
+      
+      // Add touch controls for non-marker modes
+      if ('ontouchstart' in window) {
+        // For mobile devices
+        let touchStartX = 0;
+        let touchStartY = 0;
+        
+        document.addEventListener('touchstart', function(e) {
+          if (gameState === 'play' && (gameMode === 'surface' || gameMode === 'normal')) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+          }
+        });
+        
+        document.addEventListener('touchmove', function(e) {
+          if (gameState === 'play' && (gameMode === 'surface' || gameMode === 'normal')) {
+            e.preventDefault();
+            
+            // Get the mug
+            const mug = getMugElement();
+            if (!mug) return;
+            
+            // Calculate movement
+            const touchX = e.touches[0].clientX;
+            const touchY = e.touches[0].clientY;
+            const deltaX = (touchX - touchStartX) * 0.01;
+            const deltaZ = (touchY - touchStartY) * 0.01;
+            
+            // Get current position
+            const position = mug.getAttribute('position');
+            
+            // Update position
+            mug.setAttribute('position', {
+              x: position.x + deltaX,
+              y: position.y,
+              z: position.z + deltaZ
+            });
+            
+            // Update reference points
+            touchStartX = touchX;
+            touchStartY = touchY;
+          }
+        }, { passive: false });
+      } else {
+        // For desktop devices
+        document.addEventListener('mousemove', function(e) {
+          if (gameState === 'play' && (gameMode === 'surface' || gameMode === 'normal')) {
+            // Only handle if mouse button is pressed
+            if (e.buttons !== 1) return;
+            
+            // Get the mug
+            const mug = getMugElement();
+            if (!mug) return;
+            
+            // Calculate movement
+            const deltaX = e.movementX * 0.01;
+            const deltaZ = e.movementY * 0.01;
+            
+            // Get current position
+            const position = mug.getAttribute('position');
+            
+            // Update position
+            mug.setAttribute('position', {
+              x: position.x + deltaX,
+              y: position.y,
+              z: position.z + deltaZ
+            });
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>
